@@ -618,7 +618,9 @@ const BackupPage: React.FC = () => {
 
     useEffect(() => {
         voteService.startPolling();
-        const unsub = voteService.subscribe(() => setCandidates(voteService.getCandidates()));
+        const update = () => setCandidates(voteService.getCandidates());
+        update(); // 同步初始資料
+        const unsub = voteService.subscribe(update);
         return () => unsub();
     }, []);
 
@@ -761,6 +763,8 @@ const AdminPage: React.FC = () => {
   const [isVotingOpen, setIsVotingOpen] = useState(true);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+  const [simulationTarget, setSimulationTarget] = useState<number>(900);
+  const [isScaling, setIsScaling] = useState(false);
   const [csvContent, setCsvContent] = useState('');
   const [apiModal, setApiModal] = useState({ isOpen: false, msg: '' });
   const [loginErrorModal, setLoginErrorModal] = useState({ isOpen: false, msg: '' });
@@ -826,6 +830,32 @@ const AdminPage: React.FC = () => {
       }
   };
 
+  const handleScaleSimulation = async () => {
+      if (isScaling) return;
+      setIsScaling(true);
+      try {
+          const res = await voteService.scaleVotesProportionally(simulationTarget);
+          setApiModal({ isOpen: true, msg: res.message });
+      } finally {
+          setIsScaling(false);
+      }
+  };
+
+  const handleRestoreRealData = async () => {
+      if (isScaling) return;
+      setIsScaling(true);
+      try {
+          const res = await voteService.restoreRealVotes();
+          setApiModal({ isOpen: true, msg: res.message });
+      } finally {
+          setIsScaling(false);
+      }
+  };
+
+  const totalSinging = candidates.reduce((sum, c) => sum + (c.scoreSinging || 0), 0);
+  const totalPopularity = candidates.reduce((sum, c) => sum + (c.scorePopularity || 0), 0);
+  const totalCostume = candidates.reduce((sum, c) => sum + (c.scoreCostume || 0), 0);
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-transparent px-4">
@@ -869,6 +899,26 @@ const AdminPage: React.FC = () => {
             </div>
         </div>
 
+        {/* --- 投票總數統計區塊 --- */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10 animate-fade-in-up">
+            <div className="bg-slate-800/60 border border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">🎤 金嗓總票數</div>
+                <div className="text-3xl font-black text-yellow-500 font-mono">{totalSinging}</div>
+            </div>
+            <div className="bg-slate-800/60 border border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">💖 人氣總票數</div>
+                <div className="text-3xl font-black text-pink-500 font-mono">{totalPopularity}</div>
+            </div>
+            <div className="bg-slate-800/60 border border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">🎭 造型總票數</div>
+                <div className="text-3xl font-black text-purple-500 font-mono">{totalCostume}</div>
+            </div>
+            <div className="bg-blue-600/20 border border-blue-500/30 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">📊 預估參與人數</div>
+                <div className="text-3xl font-black text-white font-mono">{Math.max(totalSinging, totalPopularity, totalCostume)}</div>
+            </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-5 space-y-8">
                 <div className="bg-[#1e293b]/60 backdrop-blur-xl border border-slate-700 p-6 rounded-3xl shadow-xl border-l-4 border-purple-500">
@@ -905,7 +955,10 @@ const AdminPage: React.FC = () => {
                 </div>
 
                 <div className="bg-[#1e293b]/60 backdrop-blur-xl border border-slate-700 p-6 rounded-3xl shadow-xl border-l-4 border-blue-500">
-                    <h2 className="text-xl font-bold mb-6 flex items-center gap-2">🛠️ 資料維護</h2>
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-bold flex items-center gap-2">🛠️ 資料維護</h2>
+                        <span className="bg-blue-600/30 text-blue-400 px-3 py-1 rounded-full text-xs font-black border border-blue-500/30">目前參與：{totalSinging} 人</span>
+                    </div>
                     <div className="grid grid-cols-1 gap-4">
                         <button onClick={handleSyncSheet} disabled={isSyncingSheet} className="bg-slate-800 hover:bg-slate-700 p-4 rounded-xl text-center text-sm font-bold border border-slate-600 transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50">
                             {isSyncingSheet ? '⏳ 同步中...' : '📡 自動同步 Google Sheets'}
@@ -921,6 +974,33 @@ const AdminPage: React.FC = () => {
                             ></textarea>
                             <button onClick={handleManualSync} disabled={isSyncingSheet} className="w-full bg-blue-700 hover:bg-blue-600 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-50">
                                 {isSyncingSheet ? '同步中...' : '✅ 貼上完成，開始同步'}
+                            </button>
+                        </div>
+
+                        <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">按比例模擬投票分佈</p>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="number" 
+                                    value={simulationTarget} 
+                                    onChange={e => setSimulationTarget(parseInt(e.target.value) || 0)}
+                                    placeholder="目標人數"
+                                    className="flex-1 bg-black/30 border border-slate-700 rounded-xl px-4 py-2 text-yellow-500 font-black outline-none focus:border-yellow-500"
+                                />
+                                <button 
+                                    onClick={() => setConfirmModal({isOpen: true, title: '模擬投票', message: `即將按照「當前投票比例」將各獎項票數放大至 ${simulationTarget} 票。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
+                                    disabled={isScaling}
+                                    className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    執行模擬
+                                </button>
+                            </div>
+                            <button 
+                                onClick={handleRestoreRealData}
+                                disabled={isScaling}
+                                className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                            >
+                                ⏪ 還原變動前真實數據
                             </button>
                         </div>
 
@@ -950,9 +1030,19 @@ const AdminPage: React.FC = () => {
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">
-                                <div className="text-right hidden md:block">
-                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Votes</div>
-                                    <div className="text-lg font-mono font-black text-yellow-500">{c.voteCount}</div>
+                                <div className="flex gap-4 text-right hidden md:flex">
+                                    <div className="flex flex-col items-center">
+                                        <div className="text-[9px] text-slate-500 font-bold uppercase">金嗓</div>
+                                        <div className="text-sm font-mono font-black text-yellow-500">{c.scoreSinging}</div>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <div className="text-[9px] text-slate-500 font-bold uppercase">人氣</div>
+                                        <div className="text-sm font-mono font-black text-pink-500">{c.scorePopularity}</div>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <div className="text-[9px] text-slate-500 font-bold uppercase">造型</div>
+                                        <div className="text-sm font-mono font-black text-purple-500">{c.scoreCostume}</div>
+                                    </div>
                                 </div>
                                 <button onClick={() => setConfirmModal({isOpen: true, title: '刪除參賽者', message: `確定移除 "${c.name}"？`, isDangerous: true, onConfirm: async () => { setConfirmModal(p => ({...p, isOpen: false})); await voteService.deleteCandidate(c.id); }})} className="text-slate-500 hover:text-red-500 p-2">✕</button>
                             </div>

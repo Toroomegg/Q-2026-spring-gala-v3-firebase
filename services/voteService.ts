@@ -106,7 +106,6 @@ class VoteService {
     return { count, message: `同步完成！已成功更新 ${count} 位參賽者。` };
   }
 
-  // 自動同步 (從連結抓取)
   async syncCandidatesFromGoogleSheet(): Promise<{ success: boolean; message: string }> {
     try {
       const response = await fetch(SHEET_CSV_URL);
@@ -119,7 +118,6 @@ class VoteService {
     }
   }
 
-  // 手動同步 (直接傳入 CSV 字串)
   async syncCandidatesFromText(csvText: string): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.processCSVLines(csvText.split(/\r?\n/));
@@ -129,7 +127,6 @@ class VoteService {
     }
   }
 
-  // --- 其他投票邏輯維持不變 ---
   async submitVoteBatch(votes: { [key in VoteCategory]: string }, isStressTest = false): Promise<{ success: boolean; message?: string }> {
     if (!isStressTest && !this.isVotingOpen) return { success: false, message: "投票通道已關閉。" };
     if (!isStressTest && !this.isGlobalTestMode && this.hasVoted()) return { success: false, message: "您已經參與過投票囉！" };
@@ -152,6 +149,67 @@ class VoteService {
       if (!this.isGlobalTestMode && !isStressTest) { localStorage.setItem(STORAGE_KEY_HAS_VOTED, 'true'); this.notifyListeners(); }
       return { success: true };
     } catch (e: any) { return { success: false, message: "連線異常。" }; }
+  }
+
+  // --- 比例模擬核心邏輯 ---
+  async scaleVotesProportionally(target: number): Promise<{ success: boolean; message: string }> {
+    if (this.candidates.length === 0) return { success: false, message: "目前沒有參賽者數據。" };
+    
+    // 1. 備份
+    const snapshot = await get(ref(db, 'candidates'));
+    if (!snapshot.exists()) return { success: false, message: "抓取數據失敗。" };
+    const originalData = snapshot.val();
+    await set(ref(db, 'settings/backup_candidates'), originalData);
+
+    const calcScaled = (scores: number[], targetTotal: number) => {
+      const sum = scores.reduce((a, b) => a + b, 0);
+      if (sum === 0) return scores.map(() => 0); // 若全為 0 則無法按比例放大
+      
+      let scaled = scores.map(s => Math.floor((s / sum) * targetTotal));
+      let currentSum = scaled.reduce((a, b) => a + b, 0);
+      let diff = targetTotal - currentSum;
+      
+      // 處理捨入差值，補給原分數較高者或權重較大者 (簡單處理補給排序前面的)
+      const remainders = scores.map((s, i) => ({ diff: (s / sum) * targetTotal - scaled[i], index: i }));
+      remainders.sort((a, b) => b.diff - a.diff);
+      
+      for (let i = 0; i < diff; i++) {
+        scaled[remainders[i].index]++;
+      }
+      return scaled;
+    };
+
+    const singingScores = calcScaled(this.candidates.map(c => c.scoreSinging), target);
+    const popularityScores = calcScaled(this.candidates.map(c => c.scorePopularity), target);
+    const costumeScores = calcScaled(this.candidates.map(c => c.scoreCostume), target);
+
+    const updates: any = {};
+    this.candidates.forEach((c, i) => {
+      updates[`candidates/${c.id}/scoreSinging`] = singingScores[i];
+      updates[`candidates/${c.id}/scorePopularity`] = popularityScores[i];
+      updates[`candidates/${c.id}/scoreCostume`] = costumeScores[i];
+      updates[`candidates/${c.id}/voteCount`] = singingScores[i] + popularityScores[i] + costumeScores[i];
+    });
+
+    try {
+      await update(ref(db, '/'), updates);
+      return { success: true, message: `模擬完成！各獎項總和均已調整為 ${target} 票。` };
+    } catch (e: any) {
+      return { success: false, message: `寫入失敗: ${e.message}` };
+    }
+  }
+
+  async restoreRealVotes(): Promise<{ success: boolean; message: string }> {
+    const backupSnapshot = await get(ref(db, 'settings/backup_candidates'));
+    if (!backupSnapshot.exists()) return { success: false, message: "找不到備份數據。" };
+    
+    try {
+      await set(ref(db, 'candidates'), backupSnapshot.val());
+      await remove(ref(db, 'settings/backup_candidates')); // 還原後移除備份
+      return { success: true, message: "數據已成功還原為真實投票紀錄。" };
+    } catch (e: any) {
+      return { success: false, message: `還原失敗: ${e.message}` };
+    }
   }
 
   async addCandidate(c: any) {
