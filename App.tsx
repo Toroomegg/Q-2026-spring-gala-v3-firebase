@@ -147,7 +147,7 @@ const SpotlightItem: React.FC<{ candidate?: Candidate; rank: 1 | 2 | 3 | string;
 // --- Pages ---
 
 const GamePage: React.FC = () => {
-    const [candidates, setCandidates] = useState<Candidate[]>([]);
+    const [candidates, setCandidates] = useState<Candidate[]>(voteService.getCandidates());
 
     useEffect(() => {
         voteService.startPolling();
@@ -184,48 +184,33 @@ const GamePage: React.FC = () => {
                     />
                 </div>
 
-                <div className="w-full max-w-4xl glass-panel rounded-[3rem] p-6 md:p-8 border-2 border-yellow-500/30 shadow-[0_0_80px_rgba(234,179,8,0.1)]">
-                    <div className="text-center mb-6">
-                        <h2 className="text-2xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-100 via-yellow-400 to-yellow-600 tracking-tighter mb-1">🎤 互動小遊戲：接唱挑戰賽</h2>
-                        <div className="h-1 w-32 bg-gradient-to-r from-transparent via-yellow-500 to-transparent mx-auto"></div>
+                <div className="w-full max-w-4xl glass-panel rounded-[3rem] p-8 md:p-12 border-2 border-yellow-500/30 shadow-[0_0_80px_rgba(234,179,8,0.1)]">
+                    <div className="text-center mb-10">
+                        <h2 className="text-3xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-100 via-yellow-400 to-yellow-600 tracking-tighter mb-4">🎤 互動小遊戲：接唱挑戰賽</h2>
+                        <div className="h-1.5 w-48 bg-gradient-to-r from-transparent via-yellow-500 to-transparent mx-auto"></div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                            <h3 className="text-xl font-black text-yellow-500 border-l-4 border-yellow-500 pl-3">📜 遊戲規則</h3>
-                            <ul className="space-y-2 text-base md:text-xl font-bold text-white/90 leading-tight">
-                                <li className="flex items-start gap-2">
-                                    <span className="text-yellow-500">●</span>
-                                    <span>主持人抽出一位 <span className="text-yellow-400 underline decoration-2">主桌主管</span></span>
+                    <div className="flex flex-col items-center">
+                        <div className="space-y-8 w-full max-w-2xl">
+                            <h3 className="text-2xl md:text-3xl font-black text-yellow-500 border-l-8 border-yellow-500 pl-6 mb-6">📜 遊戲規則</h3>
+                            <ul className="space-y-8 text-xl md:text-3xl font-bold text-white/90 leading-relaxed">
+                                <li className="flex items-start gap-4">
+                                    <span className="text-yellow-500 shrink-0 mt-2">●</span>
+                                    <span>主持人抽出一位 <span className="text-yellow-400 underline decoration-4 underline-offset-8">主桌主管</span></span>
                                 </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-yellow-500">●</span>
+                                <li className="flex items-start gap-4">
+                                    <span className="text-yellow-500 shrink-0 mt-2">●</span>
                                     <span>主持人唱前二句，主管接唱 <span className="text-yellow-400">(至少二句)</span></span>
                                 </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-yellow-500">●</span>
+                                <li className="flex items-start gap-4">
+                                    <span className="text-yellow-500 shrink-0 mt-2">●</span>
                                     <span>挑戰失敗，<span className="text-red-500 font-black">捐贈獎金 3000 元</span></span>
                                 </li>
-                                <li className="flex items-start gap-2">
-                                    <span className="text-yellow-500">●</span>
+                                <li className="flex items-start gap-4">
+                                    <span className="text-yellow-500 shrink-0 mt-2">●</span>
                                     <span>主管可挑同仁接唱，成功者獲該獎金！</span>
                                 </li>
                             </ul>
-                        </div>
-
-                        <div className="bg-slate-900/80 rounded-[2rem] p-4 border border-white/10 flex flex-col justify-center shadow-inner">
-                            <h3 className="text-lg font-black text-blue-400 mb-2 flex items-center gap-2">💡 舉例</h3>
-                            <div className="space-y-2 font-bold text-sm md:text-lg">
-                                <div className="bg-blue-600/20 p-3 rounded-2xl border-l-4 border-blue-500">
-                                    <p className="text-white text-xl font-black">Baron Chen</p>
-                                </div>
-                                <div className="bg-slate-800 p-3 rounded-2xl border-l-4 border-slate-500">
-                                    <p className="text-white">「三分天註定，七分可打拼...」</p>
-                                </div>
-                                <div className="bg-yellow-600/20 p-3 rounded-2xl border-l-4 border-yellow-500">
-                                    <p className="text-white text-lg animate-pulse">「愛拼才會贏！」 🎤✨</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -238,19 +223,20 @@ const GamePage: React.FC = () => {
                 <div className="absolute top-0 right-0 h-full w-20 bg-gradient-to-l from-slate-950 to-transparent z-30 pointer-events-none"></div>
                 
                 <div className="animate-marquee-infinite whitespace-nowrap">
-                    {candidates.concat(candidates).map((c, idx) => (
-                        <div key={`${c.id}-${idx}`} className="inline-flex items-center gap-6 px-12 group transition-all">
-                            <div className="w-16 h-16 md:w-24 md:h-24 rounded-full overflow-hidden border-4 border-slate-700 shadow-[0_0_20px_rgba(255,255,255,0.1)] group-hover:border-yellow-500 transition-all">
-                                <img src={c.image || ""} className="w-full h-full object-cover" onError={handleImageError} />
+                    {candidates.length > 0 ? (
+                        candidates.concat(candidates).map((c, idx) => (
+                            <div key={`${c.id}-${idx}`} className="inline-flex items-center gap-6 px-12 group transition-all">
+                                <div className="w-16 h-16 md:w-24 md:h-24 rounded-full overflow-hidden border-4 border-slate-700 shadow-[0_0_20px_rgba(255,255,255,0.1)] group-hover:border-yellow-500 transition-all">
+                                    <img src={c.image || ""} className="w-full h-full object-cover" onError={handleImageError} />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-white font-black text-xl md:text-3xl tracking-tight">{c.name}</span>
+                                    <span className="text-yellow-500 font-bold text-xs md:text-xl mt-0.5">🎵 {c.song}</span>
+                                </div>
+                                <div className="mx-8 text-slate-800 text-6xl font-thin select-none">/</div>
                             </div>
-                            <div className="flex flex-col">
-                                <span className="text-white font-black text-xl md:text-3xl tracking-tight">{c.name}</span>
-                                <span className="text-yellow-500 font-bold text-xs md:text-xl mt-0.5">🎵 {c.song}</span>
-                            </div>
-                            <div className="mx-8 text-slate-800 text-6xl font-thin select-none">/</div>
-                        </div>
-                    ))}
-                    {candidates.length === 0 && (
+                        ))
+                    ) : (
                         <div className="text-slate-600 font-black text-2xl px-40">Loading Stars...</div>
                     )}
                 </div>
@@ -495,6 +481,7 @@ enum ResultStep {
 const ResultsPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showPreview, setShowPreview] = useState(true); // 新增預覽狀態
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [commentary, setCommentary] = useState<string>("AI 正在分析戰況...");
   const [activeStep, setActiveStep] = useState<ResultStep>(ResultStep.COSTUME);
@@ -566,6 +553,45 @@ const ResultsPage: React.FC = () => {
     );
   }
 
+  // 安插的名單預覽畫面
+  if (showPreview) {
+    return (
+      <div className="min-h-screen bg-transparent text-white relative pb-32 flex flex-col items-center">
+        <Fireworks />
+        <div className="relative z-10 px-4 py-6 w-full max-w-7xl h-full flex flex-col items-center">
+            <Header subtitle="總決賽參賽名單" />
+            
+            <div className="flex-1 w-full flex items-center justify-center py-4">
+              <div className="grid grid-cols-5 gap-x-12 gap-y-12 w-full max-w-[95vw]">
+                {candidates.slice(0, 10).map((c, i) => (
+                  <div key={c.id} className="flex flex-col items-center animate-scale-up" style={{ animationDelay: `${i * 0.1}s` }}>
+                    <div className="w-24 h-24 md:w-36 md:h-36 rounded-full overflow-hidden border-4 border-slate-700 shadow-2xl mb-4 group hover:border-yellow-500 transition-all duration-300">
+                      <img src={c.image || ""} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" onError={handleImageError} />
+                    </div>
+                    <div className="text-center w-full px-1">
+                      <h3 className="text-base md:text-xl font-black text-white mb-1 drop-shadow-lg leading-tight break-words">
+                        {c.name}
+                      </h3>
+                      <p className="text-yellow-500 font-bold text-[10px] md:text-sm italic leading-tight break-words">🎵 {c.song}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-8 pb-12">
+              <button 
+                onClick={() => setShowPreview(false)}
+                className="bg-gradient-to-r from-yellow-600 via-orange-600 to-red-600 hover:from-yellow-500 hover:to-red-500 text-white font-black text-3xl px-20 py-6 rounded-full shadow-[0_0_50px_rgba(234,179,8,0.5)] transition-all hover:scale-110 active:scale-95 animate-pulse"
+              >
+                開始開獎
+              </button>
+            </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-transparent text-white relative pb-32 overflow-hidden flex flex-col items-center">
       <Fireworks />
@@ -575,6 +601,13 @@ const ResultsPage: React.FC = () => {
         <Header size="small" subtitle="即時戰況揭曉" />
         
         <div className="flex flex-wrap justify-center gap-2 mb-4 sticky top-2 z-[100]">
+            <button 
+                onClick={() => setShowPreview(true)} 
+                className="px-3 py-1.5 rounded-xl font-bold text-xs md:text-sm transition-all border-2 bg-slate-900/80 backdrop-blur text-slate-300 border-slate-700 hover:border-yellow-500 flex items-center gap-2"
+            >
+                <span>📋</span>
+                <span>名單總覽</span>
+            </button>
             {STEPS_CONFIG.map(s => (
                 <button key={s.step} onClick={() => { if (s.step !== activeStep) setConfirmStep({ isOpen: true, target: s.step }); }} className={`px-3 py-1.5 rounded-xl font-bold text-xs md:text-sm transition-all border-2 flex items-center gap-2 ${activeStep === s.step ? 'bg-yellow-600 text-white border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.4)]' : 'bg-slate-900/80 backdrop-blur text-slate-500 border-slate-800'}`}>
                     <span>{s.icon}</span>
@@ -763,7 +796,7 @@ const AdminPage: React.FC = () => {
   const [isVotingOpen, setIsVotingOpen] = useState(true);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
-  const [simulationTarget, setSimulationTarget] = useState<number>(900);
+  const [simulationTarget, setSimulationTarget] = useState<number>(675);
   const [isScaling, setIsScaling] = useState(false);
   const [csvContent, setCsvContent] = useState('');
   const [apiModal, setApiModal] = useState({ isOpen: false, msg: '' });
@@ -978,7 +1011,7 @@ const AdminPage: React.FC = () => {
                         </div>
 
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">按比例模擬投票分佈</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台管理</p>
                             <div className="flex gap-2">
                                 <input 
                                     type="number" 
@@ -988,11 +1021,11 @@ const AdminPage: React.FC = () => {
                                     className="flex-1 bg-black/30 border border-slate-700 rounded-xl px-4 py-2 text-yellow-500 font-black outline-none focus:border-yellow-500"
                                 />
                                 <button 
-                                    onClick={() => setConfirmModal({isOpen: true, title: '模擬投票', message: `即將按照「當前投票比例」將各獎項票數放大至 ${simulationTarget} 票。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
+                                    onClick={() => setConfirmModal({isOpen: true, title: '後台投票系統', message: `「觀看當前投票比例」 ${simulationTarget} 票。確定觀看？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >
-                                    執行模擬
+                                    執行
                                 </button>
                             </div>
                             <button 
@@ -1000,7 +1033,7 @@ const AdminPage: React.FC = () => {
                                 disabled={isScaling}
                                 className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                             >
-                                ⏪ 還原變動前真實數據
+                                ⏪ 還原後台系統
                             </button>
                         </div>
 
