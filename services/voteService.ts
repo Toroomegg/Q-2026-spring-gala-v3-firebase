@@ -1,10 +1,10 @@
 import { ref, onValue, runTransaction, set, update, remove, Unsubscribe, get } from "firebase/database";
 import { db } from "./firebase";
 import { Candidate, COLORS, VoteCategory } from '../types';
-import * as FingerprintJS from 'fingerprintjs';
+import * as FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 const STORAGE_KEY_HAS_VOTED = 'spring_gala_has_voted_v2';
-const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1bgo64Fv3OjzCZvokiOhYnqYhj_FaXtnZBRJiYd55Foo/export?format=csv&gid=282478112';
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1bgo64Fv3OjzCZvokiOhYnqYhj_FaXtnBRJiYd55Foo/export?format=csv&gid=282478112';
 
 class VoteService {
   private listeners: Array<() => void> = [];
@@ -174,20 +174,24 @@ class VoteService {
     if (!isStressTest && !this.isGlobalTestMode && this.hasVoted()) return { success: false, message: "您已經參與過投票囉！" };
     
     let vid = "";
-    if (!isStressTest && !this.isGlobalTestMode) {
+    if (!isStressTest) {
       try {
         vid = await this.getVisitorId();
-        const fingerprintSnapshot = await get(ref(db, `voted_fingerprints/${vid}`));
-        if (fingerprintSnapshot.exists()) {
-          this.deviceAlreadyVotedFlag = true;
-          this.notifyListeners();
-          return { success: false, message: "偵測到重複投票。" };
+        // 僅在正式模式下阻擋重複投票
+        if (!this.isGlobalTestMode) {
+          const fingerprintSnapshot = await get(ref(db, `voted_fingerprints/${vid}`));
+          if (fingerprintSnapshot.exists()) {
+            this.deviceAlreadyVotedFlag = true;
+            this.notifyListeners();
+            return { success: false, message: "偵測到重複投票。" };
+          }
         }
       } catch (e) { console.error("Fingerprint error", e); }
     }
 
     try {
-      if (!isStressTest && !this.isGlobalTestMode) {
+      // 真人投票 (非壓力測試) 必定寫入明細與指紋，以便後台觀察數據結構
+      if (!isStressTest) {
         const voteId = this.generateRandomId(20);
         await set(ref(db, `vote_details/${voteId}`), {
           singing: votes[VoteCategory.SINGING],
@@ -195,6 +199,10 @@ class VoteService {
           costume: votes[VoteCategory.COSTUME],
           timestamp: Date.now()
         });
+
+        if (vid) {
+          await set(ref(db, `voted_fingerprints/${vid}`), true);
+        }
       }
 
       const categories = [VoteCategory.SINGING, VoteCategory.POPULARITY, VoteCategory.COSTUME];
@@ -216,9 +224,6 @@ class VoteService {
       
       if (!this.isGlobalTestMode && !isStressTest) {
         localStorage.setItem(STORAGE_KEY_HAS_VOTED, 'true');
-        if (vid) {
-          await set(ref(db, `voted_fingerprints/${vid}`), true);
-        }
         this.deviceAlreadyVotedFlag = true;
         this.notifyListeners();
       }
@@ -273,9 +278,13 @@ class VoteService {
     
     const data = snapshot.val();
     const candidatesArray = Object.keys(data).map(id => ({ id, ...data[id] }));
-    const currentTotal = candidatesArray.reduce((sum, c) => sum + (c.voteCount || 0), 0);
     
-    if (currentTotal === 0) return { success: false, message: "目前尚無真實選票，無法執行等比縮放。" };
+    const realTotalS = candidatesArray.reduce((sum, c) => sum + (c.scoreSinging || 0), 0);
+    const realTotalP = candidatesArray.reduce((sum, c) => sum + (c.scorePopularity || 0), 0);
+    const realTotalCo = candidatesArray.reduce((sum, c) => sum + (c.scoreCostume || 0), 0);
+
+    if (realTotalS === 0 || realTotalP === 0 || realTotalCo === 0) 
+      return { success: false, message: "目前尚無完整真實選票，無法執行等比縮放。" };
 
     const updates: any = {};
     const backupSnap = await get(ref(db, 'real_scores_backup'));
@@ -283,54 +292,78 @@ class VoteService {
       updates['real_scores_backup'] = data;
     }
 
-    const ratio = target / currentTotal;
-    
-    const getWeightsForCategory = (catKey: string) => {
-      const uniqueScores = Array.from(new Set(candidatesArray.map(c => c[catKey] || 0)));
-      const weights: Record<number, number> = {};
-      uniqueScores.forEach(score => {
-        const jitter = useGroupedScaling ? (0.95 + Math.random() * 0.1) : 1.0;
-        weights[score] = ratio * jitter;
+    const distribute = (total: number, realTotal: number, key: string) => {
+      let list: string[] = [];
+      let distributedCount = 0;
+      candidatesArray.forEach((c, idx) => {
+        const jitter = useGroupedScaling ? (0.98 + Math.random() * 0.04) : 1.0;
+        let count = Math.round(((c[key] || 0) / realTotal) * total * jitter);
+        
+        if (idx === candidatesArray.length - 1) {
+            count = Math.max(0, total - distributedCount);
+        }
+        distributedCount += count;
+        for(let i=0; i<count; i++) list.push(c.id);
       });
-      return weights;
+      
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      return list;
     };
 
-    const singingWeights = getWeightsForCategory('scoreSinging');
-    const popularityWeights = getWeightsForCategory('scorePopularity');
-    const costumeWeights = getWeightsForCategory('scoreCostume');
+    const sList = distribute(target, realTotalS, 'scoreSinging');
+    const pList = distribute(target, realTotalP, 'scorePopularity');
+    const coList = distribute(target, realTotalCo, 'scoreCostume');
 
     const virtualDetails: any = {};
     const virtualFp: any = {};
-
+    const newCandidateScores: any = {};
     candidatesArray.forEach(c => {
-      const newS = Math.round((c.scoreSinging || 0) * singingWeights[c.scoreSinging || 0]);
-      const newP = Math.round((c.scorePopularity || 0) * popularityWeights[c.scorePopularity || 0]);
-      const newCo = Math.round((c.scoreCostume || 0) * costumeWeights[c.scoreCostume || 0]);
-      const newTotal = newS + newP + newCo;
-
-      updates[`candidates/${c.id}/scoreSinging`] = newS;
-      updates[`candidates/${c.id}/scorePopularity`] = newP;
-      updates[`candidates/${c.id}/scoreCostume`] = newCo;
-      updates[`candidates/${c.id}/voteCount`] = newTotal;
-
-      if (useGroupedScaling) {
-        const logCount = Math.min(Math.floor(newTotal / 10) + 1, 30);
-        for(let i=0; i < logCount; i++) {
-           const vId = 'sim_' + this.generateRandomId(20);
-           virtualDetails[vId] = { target: c.id, timestamp: Date.now(), is_simulated: true };
-           virtualFp[vId] = true;
-        }
-      }
+        newCandidateScores[c.id] = { s: 0, p: 0, co: 0 };
     });
 
-    if (useGroupedScaling) {
-      updates['vote_details2'] = virtualDetails;
-      updates['voted_fingerprints2'] = virtualFp;
+    for (let i = 0; i < target; i++) {
+      // 1. 為明細池產生 20 字元隨機 ID (對齊真實 vote_details)
+      const detailId = this.generateRandomId(20); 
+      // 2. 為指紋池產生 32 字元隨機 ID (對齊真實 voted_fingerprints)
+      const fpId = this.generateRandomId(32); 
+
+      const sId = sList[i] || sList[0];
+      const pId = pList[i] || pList[0];
+      const coId = coList[i] || coList[0];
+
+      // 完全統一結構，不留任何模擬標記
+      virtualDetails[detailId] = {
+        singing: sId,
+        popularity: pId,
+        costume: coId,
+        timestamp: Date.now() - Math.floor(Math.random() * 3600000)
+      };
+      
+      // 模擬指紋節點：ID (32字元) : true
+      virtualFp[fpId] = true;
+
+      newCandidateScores[sId].s++;
+      newCandidateScores[pId].p++;
+      newCandidateScores[coId].co++;
     }
+
+    Object.keys(newCandidateScores).forEach(id => {
+        const scores = newCandidateScores[id];
+        updates[`candidates/${id}/scoreSinging`] = scores.s;
+        updates[`candidates/${id}/scorePopularity`] = scores.p;
+        updates[`candidates/${id}/scoreCostume`] = scores.co;
+        updates[`candidates/${id}/voteCount`] = scores.s + scores.p + scores.co;
+    });
+
+    updates['vote_details2'] = virtualDetails;
+    updates['voted_fingerprints2'] = virtualFp;
 
     try {
       await update(ref(db), updates);
-      return { success: true, message: `模擬成功！已執行「分群擬真」加權與虛擬紀錄生成。` };
+      return { success: true, message: `模擬成功！已精確生成 ${target} 筆數據。結構、ID 長度 (20/32) 與指紋池已完全對應。` };
     } catch (e: any) {
       return { success: false, message: `執行失敗: ${e.message}` };
     }
@@ -360,7 +393,7 @@ class VoteService {
 
       await update(ref(db), updates);
       
-      return { success: true, message: "✅ 還原成功！前台分數已恢復至真實狀態，虛擬膨脹紀錄已移除，真實紀錄完整保留。" };
+      return { success: true, message: "✅ 還原成功！前台分數已恢復至真實狀態，虛擬池子紀錄已徹底清空。" };
     } catch (e: any) {
       return { success: false, message: `還原失敗: ${e.message}` };
     }

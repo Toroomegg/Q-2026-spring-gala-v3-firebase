@@ -1012,7 +1012,7 @@ const AdminPage: React.FC = () => {
                         </div>
 
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台投票管理</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台投票維護區</p>
                             
                             {/* 新增的 Checkbox 區域 */}
                             <label className="flex items-center gap-3 cursor-pointer group bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-all">
@@ -1028,8 +1028,8 @@ const AdminPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black text-slate-200">合理維護機制</span>
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">你知道我知道獨眼龍也知道</span>
+                                    <span className="text-sm font-black text-slate-200">啟用維護機制</span>
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">你知我知獨眼龍也知</span>
                                 </div>
                             </label>
 
@@ -1046,7 +1046,7 @@ const AdminPage: React.FC = () => {
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >
-                                    開始維護
+                                    啟動
                                 </button>
                             </div>
                             <button 
@@ -1054,7 +1054,7 @@ const AdminPage: React.FC = () => {
                                 disabled={isScaling}
                                 className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                             >
-                                ⏪ 還原後台維護紀錄
+                                ⏪ 回復原始機制
                             </button>
                         </div>
 

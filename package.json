@@ -1,3 +1,4 @@
+
 {
   "name": "spring-gala-vote",
   "private": true,
@@ -14,7 +15,8 @@
     "react-router-dom": "^6.22.0",
     "firebase": "^10.8.0",
     "recharts": "^2.12.0",
-    "@google/genai": "latest"
+    "@google/genai": "latest",
+    "@fingerprintjs/fingerprintjs": "^4.5.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.55",
