@@ -330,7 +330,7 @@ const VotePage: React.FC = () => {
               <div className="glass-panel p-10 rounded-3xl text-center max-w-md border border-green-500/50 shadow-2xl animate-scale-up">
                   <div className="text-7xl mb-6">✅</div>
                   <h1 className="text-3xl font-black text-white mb-4">投票成功！</h1>
-                  <p className="text-slate-300 text-lg mb-8">感謝您的餐與，祝您中大獎！</p>
+                  <p className="text-slate-300 text-lg mb-8">感謝您的參與，祝您中大獎！</p>
                   {isGlobalTestMode && (
                       <button 
                         onClick={() => { setJustVoted(false); setSelections({SINGING:null, POPULARITY:null, COSTUME:null}); }}
@@ -796,7 +796,8 @@ const AdminPage: React.FC = () => {
   const [isVotingOpen, setIsVotingOpen] = useState(true);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
-  const [simulationTarget, setSimulationTarget] = useState<number>(675);
+  const [simulationTarget, setSimulationTarget] = useState<number>(900);
+  const [useGroupedScaling, setUseGroupedScaling] = useState(false); // 新增分群加權狀態
   const [isScaling, setIsScaling] = useState(false);
   const [csvContent, setCsvContent] = useState('');
   const [apiModal, setApiModal] = useState({ isOpen: false, msg: '' });
@@ -867,7 +868,7 @@ const AdminPage: React.FC = () => {
       if (isScaling) return;
       setIsScaling(true);
       try {
-          const res = await voteService.scaleVotesProportionally(simulationTarget);
+          const res = await voteService.scaleVotesProportionally(simulationTarget, useGroupedScaling);
           setApiModal({ isOpen: true, msg: res.message });
       } finally {
           setIsScaling(false);
@@ -1011,7 +1012,27 @@ const AdminPage: React.FC = () => {
                         </div>
 
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台管理</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台投票管理</p>
+                            
+                            {/* 新增的 Checkbox 區域 */}
+                            <label className="flex items-center gap-3 cursor-pointer group bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-all">
+                                <div className="relative">
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only peer" 
+                                        checked={useGroupedScaling} 
+                                        onChange={e => setUseGroupedScaling(e.target.checked)} 
+                                    />
+                                    <div className="w-6 h-6 border-2 border-slate-600 rounded-lg peer-checked:bg-yellow-600 peer-checked:border-yellow-500 transition-all flex items-center justify-center">
+                                        <span className={`text-white text-xs ${useGroupedScaling ? 'opacity-100' : 'opacity-0'}`}>✓</span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-black text-slate-200">合理維護機制</span>
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">你知道我知道獨眼龍也知道</span>
+                                </div>
+                            </label>
+
                             <div className="flex gap-2">
                                 <input 
                                     type="number" 
@@ -1021,11 +1042,11 @@ const AdminPage: React.FC = () => {
                                     className="flex-1 bg-black/30 border border-slate-700 rounded-xl px-4 py-2 text-yellow-500 font-black outline-none focus:border-yellow-500"
                                 />
                                 <button 
-                                    onClick={() => setConfirmModal({isOpen: true, title: '後台投票系統', message: `「觀看當前投票比例」 ${simulationTarget} 票。確定觀看？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
+                                    onClick={() => setConfirmModal({isOpen: true, title: '模擬投票', message: `即將按照「當前投票比例」將各獎項票數放大至 ${simulationTarget} 票，並使用 ${useGroupedScaling ? '「分群擬真」' : '「精確比例」'} 模式。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >
-                                    執行
+                                    開始維護
                                 </button>
                             </div>
                             <button 
@@ -1033,7 +1054,7 @@ const AdminPage: React.FC = () => {
                                 disabled={isScaling}
                                 className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                             >
-                                ⏪ 還原後台系統
+                                ⏪ 還原後台維護紀錄
                             </button>
                         </div>
 
