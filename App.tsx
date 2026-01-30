@@ -336,7 +336,7 @@ const VotePage: React.FC = () => {
               <div className="glass-panel p-10 rounded-3xl text-center max-w-md border border-green-500/50 shadow-2xl animate-scale-up">
                   <div className="text-7xl mb-6">✅</div>
                   <h1 className="text-3xl font-black text-white mb-4">投票成功！</h1>
-                  <p className="text-slate-300 text-lg mb-8">感謝您的餐與，祝您中大獎！</p>
+                  <p className="text-slate-300 text-lg mb-8">感謝您的參與，祝您中大獎！</p>
                   {isGlobalTestMode && (
                       <button 
                         onClick={() => { setJustVoted(false); setSelections({SINGING:null, POPULARITY:null, COSTUME:null}); }}
@@ -1053,7 +1053,7 @@ const AdminPage: React.FC = () => {
                         </div>
 
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">按比例模擬投票分佈</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">投票後台維護區</p>
                             
                             {/* 新增的 Checkbox 區域 */}
                             <label className="flex items-center gap-3 cursor-pointer group bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-all">
@@ -1069,8 +1069,8 @@ const AdminPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black text-slate-200">啟用「分群擬真」加權</span>
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">確保同分公平，且避免數據規律太死板</span>
+                                    <span className="text-sm font-black text-slate-200">啟用維護機制</span>
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">我知、你知、獨眼龍也知</span>
                                 </div>
                             </label>
 
@@ -1087,7 +1087,7 @@ const AdminPage: React.FC = () => {
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >
-                                    執行模擬
+                                    啟動
                                 </button>
                             </div>
                             <button 
@@ -1095,7 +1095,7 @@ const AdminPage: React.FC = () => {
                                 disabled={isScaling}
                                 className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                             >
-                                ⏪ 還原變動前真實數據
+                                ⏪ 還原維護紀錄
                             </button>
                         </div>
 

@@ -15,7 +15,7 @@ if (process.env.API_KEY) {
 export const generateLiveCommentary = async (candidates: Candidate[]): Promise<string> => {
   if (!ai) {
       // 如果沒有 API Key，不回傳錯誤，而是回傳預設的炒熱氣氛語句
-      return "春酒現場氣氛嗨到最高點！請大家踴躍投票！";
+      return "尾牙現場氣氛嗨到最高點！請大家踴躍投票！";
   }
 
   // Sort by Total Score
