@@ -56,6 +56,8 @@ const CandidateDetailModal: React.FC<{
                         src={candidate.image || "https://images.unsplash.com/photo-1516280440614-6697288d5d38?auto=format&fit=crop&w=800&q=80"} 
                         className="w-full h-full object-cover"
                         onError={handleImageError}
+                        loading="lazy"
+                        decoding="async"
                     />
                     <button onClick={onClose} className="absolute top-4 right-4 w-10 h-10 bg-black/50 backdrop-blur-md rounded-full text-white flex items-center justify-center border border-white/20 hover:bg-black/70 transition-all">✕</button>
                     <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-slate-900 to-transparent p-6">
@@ -94,6 +96,8 @@ const Header: React.FC<{ subtitle?: string; size?: 'small' | 'large' }> = ({ sub
             src="https://storage.googleapis.com/example-eggy-addressable/DownloadFile/2026Slogan.png" 
             alt="Spring Gala Logo" 
             onError={handleImageError}
+            loading="eager"
+            decoding="async"
             className={`${size === 'large' ? 'h-40 md:h-56' : 'h-16 md:h-24'} object-contain drop-shadow-[0_0_25px_rgba(234,179,8,0.5)] relative z-10`}
         />
     </div>
@@ -127,7 +131,7 @@ const SpotlightItem: React.FC<{ candidate?: Candidate; rank: 1 | 2 | 3 | string;
 
             <div className="relative z-20 mb-6">
                 <div className={`rounded-full overflow-hidden border-8 border-slate-800 bg-slate-900 w-40 h-40 md:w-64 md:h-64 shadow-[0_0_80px_rgba(255,255,255,0.1)] relative transition-transform duration-700 hover:scale-105`}>
-                     <img src={candidate.image || "https://images.unsplash.com/photo-1516280440614-6697288d5d38?auto=format&fit=crop&w=800&q=80"} className="w-full h-full object-cover" onError={handleImageError} />
+                     <img src={candidate.image || "https://images.unsplash.com/photo-1516280440614-6697288d5d38?auto=format&fit=crop&w=800&q=80"} className="w-full h-full object-cover" onError={handleImageError} loading="eager" decoding="async" />
                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent"></div>
                 </div>
                 <div className={`absolute -bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 border-4 border-slate-700 px-6 py-1 rounded-full shadow-2xl z-30 flex items-center gap-3`}>
@@ -181,6 +185,8 @@ const GamePage: React.FC = () => {
                         alt="Tail Logo" 
                         className="h-full max-w-full object-contain drop-shadow-[0_0_50px_rgba(234,179,8,0.7)]"
                         onError={handleImageError}
+                        loading="eager"
+                        decoding="async"
                     />
                 </div>
 
@@ -227,7 +233,7 @@ const GamePage: React.FC = () => {
                         candidates.concat(candidates).map((c, idx) => (
                             <div key={`${c.id}-${idx}`} className="inline-flex items-center gap-6 px-12 group transition-all">
                                 <div className="w-16 h-16 md:w-24 md:h-24 rounded-full overflow-hidden border-4 border-slate-700 shadow-[0_0_20px_rgba(255,255,255,0.1)] group-hover:border-yellow-500 transition-all">
-                                    <img src={c.image || ""} className="w-full h-full object-cover" onError={handleImageError} />
+                                    <img src={c.image || ""} className="w-full h-full object-cover" onError={handleImageError} loading="lazy" decoding="async" />
                                 </div>
                                 <div className="flex flex-col">
                                     <span className="text-white font-black text-xl md:text-3xl tracking-tight">{c.name}</span>
@@ -330,7 +336,7 @@ const VotePage: React.FC = () => {
               <div className="glass-panel p-10 rounded-3xl text-center max-w-md border border-green-500/50 shadow-2xl animate-scale-up">
                   <div className="text-7xl mb-6">✅</div>
                   <h1 className="text-3xl font-black text-white mb-4">投票成功！</h1>
-                  <p className="text-slate-300 text-lg mb-8">感謝您的參與，祝您中大獎！</p>
+                  <p className="text-slate-300 text-lg mb-8">感謝您的餐與，祝您中大獎！</p>
                   {isGlobalTestMode && (
                       <button 
                         onClick={() => { setJustVoted(false); setSelections({SINGING:null, POPULARITY:null, COSTUME:null}); }}
@@ -418,6 +424,8 @@ const VotePage: React.FC = () => {
                                             src={c.image || "https://images.unsplash.com/photo-1516280440614-6697288d5d38?auto=format&fit=crop&w=800&q=80"} 
                                             className="w-full h-full object-cover" 
                                             onError={handleImageError}
+                                            loading="lazy"
+                                            decoding="async"
                                         />
                                     </div>
                                     {isVotingOpen && isSelected && (
@@ -487,6 +495,13 @@ const ResultsPage: React.FC = () => {
   const [activeStep, setActiveStep] = useState<ResultStep>(ResultStep.COSTUME);
   const [confirmStep, setConfirmStep] = useState<{isOpen: boolean, target: ResultStep | null}>({isOpen: false, target: null});
   const [errorModal, setErrorModal] = useState({ isOpen: false, msg: '' });
+
+  // 用於智慧 AI 觸發的狀態
+  const lastUpdateRef = useRef<{ leaderId: string, totalVotes: number, timestamp: number }>({
+      leaderId: '',
+      totalVotes: 0,
+      timestamp: 0
+  });
   
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -494,10 +509,36 @@ const ResultsPage: React.FC = () => {
     const updateData = () => setCandidates(voteService.getCandidates());
     updateData();
     const unsub = voteService.subscribe(updateData);
+
+    // 智慧型 AI 講評觸發邏輯 (Point 4 Optimization)
     const commentInterval = setInterval(async () => {
         const currentCandidates = voteService.getCandidates();
-        if (currentCandidates.length > 0) setCommentary(await generateLiveCommentary(currentCandidates));
-    }, 20000);
+        if (currentCandidates.length === 0) return;
+
+        const totalVotes = currentCandidates.reduce((sum, c) => sum + c.voteCount, 0);
+        const sorted = [...currentCandidates].sort((a, b) => b.scoreSinging - a.scoreSinging);
+        const currentLeader = sorted[0];
+        const now = Date.now();
+
+        // 觸發條件：
+        // 1. 領先者變動 (黃金交叉)
+        // 2. 票數增長超過 10%
+        // 3. 保底 60 秒更新一次
+        const shouldUpdate = 
+            currentLeader?.id !== lastUpdateRef.current.leaderId ||
+            totalVotes >= lastUpdateRef.current.totalVotes * 1.1 ||
+            (now - lastUpdateRef.current.timestamp) > 60000;
+
+        if (shouldUpdate) {
+            setCommentary(await generateLiveCommentary(currentCandidates));
+            lastUpdateRef.current = {
+                leaderId: currentLeader?.id || '',
+                totalVotes: totalVotes,
+                timestamp: now
+            };
+        }
+    }, 10000); // 每 10 秒檢查一次條件
+
     return () => { voteService.stopPolling(); unsub(); clearInterval(commentInterval); };
   }, [isAuthenticated]);
 
@@ -566,7 +607,7 @@ const ResultsPage: React.FC = () => {
                 {candidates.slice(0, 10).map((c, i) => (
                   <div key={c.id} className="flex flex-col items-center animate-scale-up" style={{ animationDelay: `${i * 0.1}s` }}>
                     <div className="w-24 h-24 md:w-36 md:h-36 rounded-full overflow-hidden border-4 border-slate-700 shadow-2xl mb-4 group hover:border-yellow-500 transition-all duration-300">
-                      <img src={c.image || ""} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" onError={handleImageError} />
+                      <img src={c.image || ""} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" onError={handleImageError} loading="lazy" decoding="async" />
                     </div>
                     <div className="text-center w-full px-1">
                       <h3 className="text-base md:text-xl font-black text-white mb-1 drop-shadow-lg leading-tight break-words">
@@ -1012,7 +1053,7 @@ const AdminPage: React.FC = () => {
                         </div>
 
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台投票維護區</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">按比例模擬投票分佈</p>
                             
                             {/* 新增的 Checkbox 區域 */}
                             <label className="flex items-center gap-3 cursor-pointer group bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-all">
@@ -1028,8 +1069,8 @@ const AdminPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black text-slate-200">啟用維護機制</span>
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">你知我知獨眼龍也知</span>
+                                    <span className="text-sm font-black text-slate-200">啟用「分群擬真」加權</span>
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">確保同分公平，且避免數據規律太死板</span>
                                 </div>
                             </label>
 
@@ -1046,7 +1087,7 @@ const AdminPage: React.FC = () => {
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >
-                                    啟動
+                                    執行模擬
                                 </button>
                             </div>
                             <button 
@@ -1054,7 +1095,7 @@ const AdminPage: React.FC = () => {
                                 disabled={isScaling}
                                 className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                             >
-                                ⏪ 回復原始機制
+                                ⏪ 還原變動前真實數據
                             </button>
                         </div>
 
@@ -1076,7 +1117,7 @@ const AdminPage: React.FC = () => {
                         <div key={c.id} className="bg-slate-800/40 border border-slate-700/50 p-4 rounded-2xl flex items-center justify-between group">
                             <div className="flex items-center gap-4 truncate">
                                 <div className="w-14 h-14 rounded-full bg-slate-700 overflow-hidden shrink-0 border-2 border-slate-600">
-                                    {c.image ? <img src={c.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center">👤</div>}
+                                    {c.image ? <img src={c.image} className="w-full h-full object-cover" loading="lazy" decoding="async" /> : <div className="w-full h-full flex items-center justify-center">👤</div>}
                                 </div>
                                 <div className="truncate">
                                     <div className="font-bold text-lg truncate group-hover:text-yellow-400 transition-colors">{c.name}</div>

@@ -1,15 +1,17 @@
-import { ref, onValue, runTransaction, set, update, remove, Unsubscribe, get } from "firebase/database";
+
+import { ref, onValue, set, update, remove, Unsubscribe, get, increment } from "firebase/database";
 import { db } from "./firebase";
 import { Candidate, COLORS, VoteCategory } from '../types';
 import * as FingerprintJS from '@fingerprintjs/fingerprintjs';
 
 const STORAGE_KEY_HAS_VOTED = 'spring_gala_has_voted_v2';
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1bgo64Fv3OjzCZvokiOhYnqYhj_FaXtnBRJiYd55Foo/export?format=csv&gid=282478112';
+const SHARD_COUNT = 10; // 分散式計數器分片數量
 
 class VoteService {
   private listeners: Array<() => void> = [];
   private candidates: Candidate[] = [];
-  private dbUnsubscribe: Unsubscribe | null = null;
+  private unsubs: Unsubscribe[] = [];
   private deviceAlreadyVotedFlag = false;
   private fpPromise: Promise<string> | null = null;
   
@@ -58,33 +60,56 @@ class VoteService {
   }
 
   startPolling() {
-    if (this.dbUnsubscribe) return;
+    if (this.unsubs.length > 0) return;
     this.checkCrossBrowserVoteStatus();
-    const dbRef = ref(db, '/');
-    this.dbUnsubscribe = onValue(dbRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      const remoteCandidates = data.candidates || {};
-      const settings = data.settings || {};
+
+    const settingsRef = ref(db, 'settings');
+    const unsubSettings = onValue(settingsRef, (snapshot) => {
+      const settings = snapshot.val() || {};
       this.isGlobalTestMode = settings.isGlobalTestMode || false;
       this.isVotingOpen = settings.isVotingOpen !== false; 
+      this.notifyListeners();
+    });
+    this.unsubs.push(unsubSettings);
+
+    const candidatesRef = ref(db, 'candidates');
+    const unsubCandidates = onValue(candidatesRef, (snapshot) => {
+      const remoteCandidates = snapshot.val() || {};
       this.candidates = Object.keys(remoteCandidates).map((id, index) => {
         const c = remoteCandidates[id];
+        
+        // 聚合分散式計數器 (Sum Shards)
+        let sSinging = c.scoreSinging || 0;
+        let sPopularity = c.scorePopularity || 0;
+        let sCostume = c.scoreCostume || 0;
+        let vCount = c.voteCount || 0;
+
+        if (c.shards) {
+          Object.values(c.shards).forEach((shard: any) => {
+            sSinging += (shard.scoreSinging || 0);
+            sPopularity += (shard.scorePopularity || 0);
+            sCostume += (shard.scoreCostume || 0);
+            vCount += (shard.voteCount || 0);
+          });
+        }
+
         return {
           id: id,
           name: c.name || 'Unknown',
           song: c.song || '',
           image: c.image || '',
           videoLink: c.videoLink || '',
-          scoreSinging: c.scoreSinging || 0,
-          scorePopularity: c.scorePopularity || 0,
-          scoreCostume: c.scoreCostume || 0,
-          totalScore: (c.scoreSinging || 0) + (c.scorePopularity || 0) + (c.scoreCostume || 0),
-          voteCount: c.voteCount || 0,
+          scoreSinging: sSinging,
+          scorePopularity: sPopularity,
+          scoreCostume: sCostume,
+          totalScore: sSinging + sPopularity + sCostume,
+          voteCount: vCount,
           color: COLORS[index % COLORS.length]
         };
       });
       this.notifyListeners();
     });
+    this.unsubs.push(unsubCandidates);
   }
 
   private async checkCrossBrowserVoteStatus() {
@@ -101,7 +126,8 @@ class VoteService {
   }
 
   stopPolling() {
-    if (this.dbUnsubscribe) { this.dbUnsubscribe(); this.dbUnsubscribe = null; }
+    this.unsubs.forEach(unsub => unsub());
+    this.unsubs = [];
   }
 
   async setVotingStatus(open: boolean) {
@@ -130,7 +156,7 @@ class VoteService {
       const candidateRef = ref(db, `candidates/${id}`);
       const snapshot = await get(candidateRef);
       if (snapshot.exists()) {
-        await update(candidateRef, { name: val1, song: val2, image, videoLink: video });
+        await update(candidateRef, { name: val1, song: val2, image, videoLink: video, shards: null }); // 同步時清空舊分片
       } else {
         await set(candidateRef, {
           name: val1,
@@ -140,7 +166,8 @@ class VoteService {
           scoreSinging: 0,
           scorePopularity: 0,
           scoreCostume: 0,
-          voteCount: 0
+          voteCount: 0,
+          shards: null
         });
       }
       count++;
@@ -177,7 +204,6 @@ class VoteService {
     if (!isStressTest) {
       try {
         vid = await this.getVisitorId();
-        // 僅在正式模式下阻擋重複投票
         if (!this.isGlobalTestMode) {
           const fingerprintSnapshot = await get(ref(db, `voted_fingerprints/${vid}`));
           if (fingerprintSnapshot.exists()) {
@@ -190,37 +216,39 @@ class VoteService {
     }
 
     try {
-      // 真人投票 (非壓力測試) 必定寫入明細與指紋，以便後台觀察數據結構
+      const updates: any = {};
+      const voteId = isStressTest ? null : this.generateRandomId(20);
+      
       if (!isStressTest) {
-        const voteId = this.generateRandomId(20);
-        await set(ref(db, `vote_details/${voteId}`), {
+        updates[`vote_details/${voteId}`] = {
           singing: votes[VoteCategory.SINGING],
           popularity: votes[VoteCategory.POPULARITY],
           costume: votes[VoteCategory.COSTUME],
           timestamp: Date.now()
-        });
-
+        };
         if (vid) {
-          await set(ref(db, `voted_fingerprints/${vid}`), true);
+          updates[`voted_fingerprints/${vid}`] = true;
         }
       }
 
+      // 使用原子增量 (increment) 與隨機分片 (Sharding) 優化高併發寫入
       const categories = [VoteCategory.SINGING, VoteCategory.POPULARITY, VoteCategory.COSTUME];
-      const promises = categories.map(async (cat) => {
+      categories.forEach((cat) => {
         const candidateId = votes[cat];
         if (!candidateId) return;
-        const candidateRef = ref(db, `candidates/${candidateId}`);
-        return runTransaction(candidateRef, (currentData) => {
-          if (currentData) {
-            if (cat === VoteCategory.SINGING) currentData.scoreSinging = (currentData.scoreSinging || 0) + 1;
-            else if (cat === VoteCategory.POPULARITY) currentData.scorePopularity = (currentData.scorePopularity || 0) + 1;
-            else if (cat === VoteCategory.COSTUME) currentData.scoreCostume = (currentData.scoreCostume || 0) + 1;
-            currentData.voteCount = (currentData.voteCount || 0) + 1;
-          }
-          return currentData;
-        });
+        const shardId = Math.floor(Math.random() * SHARD_COUNT).toString();
+        
+        let field = "";
+        if (cat === VoteCategory.SINGING) field = "scoreSinging";
+        else if (cat === VoteCategory.POPULARITY) field = "scorePopularity";
+        else if (cat === VoteCategory.COSTUME) field = "scoreCostume";
+
+        updates[`candidates/${candidateId}/shards/${shardId}/${field}`] = increment(1);
+        updates[`candidates/${candidateId}/shards/${shardId}/voteCount`] = increment(1);
       });
-      await Promise.all(promises);
+
+      // 樂觀執行寫入：Firebase SDK 會處理離線隊列
+      await update(ref(db), updates);
       
       if (!this.isGlobalTestMode && !isStressTest) {
         localStorage.setItem(STORAGE_KEY_HAS_VOTED, 'true');
@@ -258,6 +286,7 @@ class VoteService {
         updates[`candidates/${id}/scorePopularity`] = 0;
         updates[`candidates/${id}/scoreCostume`] = 0;
         updates[`candidates/${id}/voteCount`] = 0;
+        updates[`candidates/${id}/shards`] = null; // 清空分片
       });
       updates['voted_fingerprints'] = null;
       updates['voted_fingerprints2'] = null;
@@ -277,11 +306,25 @@ class VoteService {
     if (!snapshot.exists()) return { success: false, message: "無參賽者資料" };
     
     const data = snapshot.val();
-    const candidatesArray = Object.keys(data).map(id => ({ id, ...data[id] }));
+    const candidatesArray = Object.keys(data).map(id => {
+        const c = data[id];
+        // 模擬前先聚合當前數據
+        let sS = c.scoreSinging || 0;
+        let sP = c.scorePopularity || 0;
+        let sC = c.scoreCostume || 0;
+        if (c.shards) {
+          Object.values(c.shards).forEach((sh: any) => {
+            sS += (sh.scoreSinging || 0);
+            sP += (sh.scorePopularity || 0);
+            sC += (sh.scoreCostume || 0);
+          });
+        }
+        return { id, scoreSinging: sS, scorePopularity: sP, scoreCostume: sC };
+    });
     
-    const realTotalS = candidatesArray.reduce((sum, c) => sum + (c.scoreSinging || 0), 0);
-    const realTotalP = candidatesArray.reduce((sum, c) => sum + (c.scorePopularity || 0), 0);
-    const realTotalCo = candidatesArray.reduce((sum, c) => sum + (c.scoreCostume || 0), 0);
+    const realTotalS = candidatesArray.reduce((sum, c) => sum + c.scoreSinging, 0);
+    const realTotalP = candidatesArray.reduce((sum, c) => sum + c.scorePopularity, 0);
+    const realTotalCo = candidatesArray.reduce((sum, c) => sum + c.scoreCostume, 0);
 
     if (realTotalS === 0 || realTotalP === 0 || realTotalCo === 0) 
       return { success: false, message: "目前尚無完整真實選票，無法執行等比縮放。" };
@@ -295,7 +338,7 @@ class VoteService {
     const distribute = (total: number, realTotal: number, key: string) => {
       let list: string[] = [];
       let distributedCount = 0;
-      candidatesArray.forEach((c, idx) => {
+      candidatesArray.forEach((c: any, idx) => {
         const jitter = useGroupedScaling ? (0.98 + Math.random() * 0.04) : 1.0;
         let count = Math.round(((c[key] || 0) / realTotal) * total * jitter);
         
@@ -325,16 +368,13 @@ class VoteService {
     });
 
     for (let i = 0; i < target; i++) {
-      // 1. 為明細池產生 20 字元隨機 ID (對齊真實 vote_details)
       const detailId = this.generateRandomId(20); 
-      // 2. 為指紋池產生 32 字元隨機 ID (對齊真實 voted_fingerprints)
       const fpId = this.generateRandomId(32); 
 
       const sId = sList[i] || sList[0];
       const pId = pList[i] || pList[0];
       const coId = coList[i] || coList[0];
 
-      // 完全統一結構，不留任何模擬標記
       virtualDetails[detailId] = {
         singing: sId,
         popularity: pId,
@@ -342,7 +382,6 @@ class VoteService {
         timestamp: Date.now() - Math.floor(Math.random() * 3600000)
       };
       
-      // 模擬指紋節點：ID (32字元) : true
       virtualFp[fpId] = true;
 
       newCandidateScores[sId].s++;
@@ -356,6 +395,7 @@ class VoteService {
         updates[`candidates/${id}/scorePopularity`] = scores.p;
         updates[`candidates/${id}/scoreCostume`] = scores.co;
         updates[`candidates/${id}/voteCount`] = scores.s + scores.p + scores.co;
+        updates[`candidates/${id}/shards`] = null; // 縮放時寫入根節點並清理分片
     });
 
     updates['vote_details2'] = virtualDetails;
@@ -363,7 +403,7 @@ class VoteService {
 
     try {
       await update(ref(db), updates);
-      return { success: true, message: `模擬成功！已精確生成 ${target} 筆數據。結構、ID 長度 (20/32) 與指紋池已完全對應。` };
+      return { success: true, message: `模擬成功！已精確生成 ${target} 筆數據。已優化為分片結構相容模式。` };
     } catch (e: any) {
       return { success: false, message: `執行失敗: ${e.message}` };
     }
@@ -373,7 +413,7 @@ class VoteService {
     try {
       const backupSnap = await get(ref(db, 'real_scores_backup'));
       if (!backupSnap.exists()) {
-        return { success: false, message: "⚠️ 找不到備份數據。目前資料可能已是真實狀態。" };
+        return { success: false, message: "⚠️ 找不到備份數據。" };
       }
 
       const realData = backupSnap.val();
@@ -385,6 +425,7 @@ class VoteService {
         updates[`candidates/${id}/scorePopularity`] = c.scorePopularity || 0;
         updates[`candidates/${id}/scoreCostume`] = c.scoreCostume || 0;
         updates[`candidates/${id}/voteCount`] = c.voteCount || 0;
+        updates[`candidates/${id}/shards`] = c.shards || null;
       });
 
       updates['vote_details2'] = null;
@@ -393,7 +434,7 @@ class VoteService {
 
       await update(ref(db), updates);
       
-      return { success: true, message: "✅ 還原成功！前台分數已恢復至真實狀態，虛擬池子紀錄已徹底清空。" };
+      return { success: true, message: "✅ 還原成功！" };
     } catch (e: any) {
       return { success: false, message: `還原失敗: ${e.message}` };
     }
@@ -416,10 +457,10 @@ class VoteService {
           [VoteCategory.POPULARITY]: cats[Math.floor(Math.random() * cats.length)],
           [VoteCategory.COSTUME]: cats[Math.floor(Math.random() * cats.length)],
         };
-        await this.submitVoteBatch(votes, true);
-        onUpdate(count, `任務 #${count}: 模擬成功完成`);
+        this.submitVoteBatch(votes, true); // 不使用 await 以極大化併發壓力
+        onUpdate(count, `併發任務 #${count}: 已發送`);
       }
-    }, 50);
+    }, 10); // 縮短間隔以測試分散式計數器效能
   }
 
   stopStressTest() {
