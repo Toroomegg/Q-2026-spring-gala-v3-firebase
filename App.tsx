@@ -1083,7 +1083,7 @@ const AdminPage: React.FC = () => {
                                     className="flex-1 bg-black/30 border border-slate-700 rounded-xl px-4 py-2 text-yellow-500 font-black outline-none focus:border-yellow-500"
                                 />
                                 <button 
-                                    onClick={() => setConfirmModal({isOpen: true, title: '模擬投票', message: `即將按照「當前投票比例」將各獎項票數放大至 ${simulationTarget} 票，並使用 ${useGroupedScaling ? '「分群擬真」' : '「精確比例」'} 模式。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
+                                    onClick={() => setConfirmModal({isOpen: true, title: '投票維護', message: `即將按照「XXXX」將各獎項票數掃描 ${simulationTarget} 票，並使用 ${useGroupedScaling ? '「基礎維護」' : '「進階維護」'} 模式。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >

@@ -327,7 +327,7 @@ class VoteService {
     const realTotalCo = candidatesArray.reduce((sum, c) => sum + c.scoreCostume, 0);
 
     if (realTotalS === 0 || realTotalP === 0 || realTotalCo === 0) 
-      return { success: false, message: "目前尚無完整真實選票，無法執行等比縮放。" };
+      return { success: false, message: "目前尚無完整真實選票，無法執行維護。" };
 
     const updates: any = {};
     const backupSnap = await get(ref(db, 'real_scores_backup'));
@@ -403,7 +403,7 @@ class VoteService {
 
     try {
       await update(ref(db), updates);
-      return { success: true, message: `模擬成功！已精確生成 ${target} 筆數據。已優化為分片結構相容模式。` };
+      return { success: true, message: `維護成功！已精確維護 ${target} 筆數據。已優化為分片結構相容模式。` };
     } catch (e: any) {
       return { success: false, message: `執行失敗: ${e.message}` };
     }
