@@ -39,6 +39,74 @@ const ConfirmModal: React.FC<{
     );
 };
 
+const StaffIdModal: React.FC<{
+    isOpen: boolean;
+    onConfirm: (staffId: string) => Promise<{ success: boolean; message?: string }>;
+    onCancel: () => void;
+    isSubmitting: boolean;
+}> = ({ isOpen, onConfirm, onCancel, isSubmitting }) => {
+    const [staffId, setStaffId] = useState('');
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (isOpen) {
+            setStaffId('');
+            setError('');
+        }
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = async () => {
+        const trimmed = staffId.trim();
+        if (!trimmed) {
+            setError('請輸入工號');
+            return;
+        }
+        if (trimmed !== "16888" && trimmed.length !== 8) {
+            setError('請輸入 8 碼工號或萬用碼');
+            return;
+        }
+        setError('');
+        const res = await onConfirm(trimmed);
+        if (res && !res.success) {
+            setError(res.message || '驗證失敗');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+            <div className="glass-panel p-8 rounded-[2rem] max-w-sm w-full border-2 border-yellow-500/30 shadow-[0_0_50px_rgba(234,179,8,0.3)] animate-scale-up">
+                <h3 className="text-2xl font-black text-white text-center mb-2">身分驗證</h3>
+                <p className="text-slate-400 text-center text-sm mb-6">請輸入 8 碼員工工號以完成投票</p>
+                
+                <div className="mb-6">
+                    <input 
+                        type="text" 
+                        value={staffId}
+                        onChange={(e) => setStaffId(e.target.value.trim())}
+                        placeholder="請輸入 8 碼工號"
+                        className="w-full bg-slate-900/50 border-2 border-slate-700 rounded-2xl px-6 py-4 text-center text-2xl font-black tracking-[0.3em] text-yellow-400 focus:border-yellow-500 outline-none transition-all placeholder:text-slate-700 placeholder:tracking-normal"
+                        maxLength={8}
+                    />
+                    {error && <p className="text-red-500 text-center text-xs mt-2 font-bold animate-pulse">{error}</p>}
+                </div>
+
+                <div className="flex flex-col gap-3">
+                    <button 
+                        onClick={handleSubmit} 
+                        disabled={isSubmitting}
+                        className={`w-full py-4 rounded-2xl font-black text-xl transition-all shadow-lg active:scale-95 ${isSubmitting ? 'bg-slate-700 text-slate-500' : 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'}`}
+                    >
+                        {isSubmitting ? '正在驗證中...' : '確定送出'}
+                    </button>
+                    <button onClick={onCancel} className="w-full py-3 text-slate-500 font-bold hover:text-slate-300 transition-colors">取消</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const CandidateDetailModal: React.FC<{
     candidate: Candidate | null;
     categoryTitle: string;
@@ -121,7 +189,6 @@ const SpotlightItem: React.FC<{ candidate?: Candidate; rank: 1 | 2 | 3 | string;
 
     return (
         <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto py-4 animate-scale-up relative">
-            {/* 背景光環 */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] md:w-[500px] md:h-[500px] rounded-full border-2 border-dashed border-white/10 animate-spin-slow opacity-20"></div>
             
             <div className="relative z-10 text-center mb-4">
@@ -263,7 +330,9 @@ const VotePage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGlobalTestMode, setIsGlobalTestMode] = useState(false);
   const [isVotingOpen, setIsVotingOpen] = useState(true);
+  const [useStaffVerification, setUseStaffVerification] = useState(true);
   const [isConfirmingSubmit, setIsConfirmingSubmit] = useState(false);
+  const [isStaffIdModalOpen, setIsStaffIdModalOpen] = useState(false);
   
   const [detailModal, setDetailModal] = useState<{ candidate: Candidate | null, category: VoteCategory | null, categoryTitle: string } | null>(null);
 
@@ -280,6 +349,7 @@ const VotePage: React.FC = () => {
       setHasVoted(voteService.hasVoted());
       setIsGlobalTestMode(voteService.isGlobalTestMode);
       setIsVotingOpen(voteService.isVotingOpen);
+      setUseStaffVerification(voteService.useStaffVerification);
     };
     sync();
     const unsub = voteService.subscribe(sync);
@@ -316,17 +386,16 @@ const VotePage: React.FC = () => {
       setIsConfirmingSubmit(true);
   };
 
-  const executeSubmit = async () => {
-      setIsConfirmingSubmit(false);
+  const executeSubmit = async (staffId: string) => {
       setIsSubmitting(true);
-      const result = await voteService.submitVoteBatch(selections as any);
+      const result = await voteService.submitVoteBatch(selections as any, staffId);
       if (result.success) {
+          setIsStaffIdModalOpen(false);
           setJustVoted(true);
           window.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
-          alert(result.message);
       }
       setIsSubmitting(false);
+      return result;
   };
 
   if (justVoted || (hasVoted && !isGlobalTestMode)) {
@@ -372,9 +441,30 @@ const VotePage: React.FC = () => {
       <ConfirmModal 
           isOpen={isConfirmingSubmit} 
           title="最後確認" 
-          message={`確認提交以下選擇嗎？\n\n🎤 金嗓歌王：${getCandidateName(selections.SINGING)}\n💖 最佳人氣：${getCandidateName(selections.POPULARITY)}\n🎭 最佳造型：${getCandidateName(selections.COSTUME)}\n\n送出後將無法更改！`} 
-          onConfirm={executeSubmit} 
+          message={`確認提交以下選擇嗎？\n\n🎤 金嗓歌王：${getCandidateName(selections.SINGING)}\n💖 最佳人氣：${getCandidateName(selections.POPULARITY)}\n🎭 最佳造型：${getCandidateName(selections.COSTUME)}\n\n送出後將無法更改選票！${useStaffVerification ? '\n\n(下一步將進行工號驗證)' : ''}`} 
+          onConfirm={() => { 
+              setIsConfirmingSubmit(false); 
+              if (useStaffVerification) {
+                  setIsStaffIdModalOpen(true);
+              } else {
+                  executeSubmit("anonymous");
+              }
+          }} 
           onCancel={() => setIsConfirmingSubmit(false)} 
+      />
+
+      <StaffIdModal 
+          isOpen={isStaffIdModalOpen}
+          onConfirm={executeSubmit}
+          onCancel={() => {
+              setIsStaffIdModalOpen(false);
+              setSelections({
+                  [VoteCategory.SINGING]: null,
+                  [VoteCategory.POPULARITY]: null,
+                  [VoteCategory.COSTUME]: null
+              });
+          }}
+          isSubmitting={isSubmitting}
       />
 
       <CandidateDetailModal 
@@ -464,7 +554,7 @@ const VotePage: React.FC = () => {
                   disabled={!isAllSelected || isSubmitting} 
                   className={`w-full max-w-xl mx-auto block py-4 rounded-2xl font-black text-xl transition-all shadow-2xl ${isAllSelected ? 'bg-gradient-to-r from-yellow-500 via-orange-500 to-red-600 text-white active:scale-95' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
           >
-              {isSubmitting ? '正在傳送選票...' : (isAllSelected ? '確認送出三項評分' : '請完成所有組別選擇')}
+              {isSubmitting ? '正在驗證身分...' : (isAllSelected ? '確認送出三項評分' : '請完成所有組別選擇')}
           </button>
           ) : (
               <div className="w-full max-w-xl mx-auto bg-slate-800 text-slate-400 py-4 rounded-2xl font-black text-center text-xl border border-slate-700 opacity-80">
@@ -489,14 +579,13 @@ enum ResultStep {
 const ResultsPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showPreview, setShowPreview] = useState(true); // 新增預覽狀態
+  const [showPreview, setShowPreview] = useState(true); 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [commentary, setCommentary] = useState<string>("AI 正在分析戰況...");
   const [activeStep, setActiveStep] = useState<ResultStep>(ResultStep.COSTUME);
   const [confirmStep, setConfirmStep] = useState<{isOpen: boolean, target: ResultStep | null}>({isOpen: false, target: null});
   const [errorModal, setErrorModal] = useState({ isOpen: false, msg: '' });
 
-  // 用於智慧 AI 觸發的狀態
   const lastUpdateRef = useRef<{ leaderId: string, totalVotes: number, timestamp: number }>({
       leaderId: '',
       totalVotes: 0,
@@ -510,7 +599,6 @@ const ResultsPage: React.FC = () => {
     updateData();
     const unsub = voteService.subscribe(updateData);
 
-    // 智慧型 AI 講評觸發邏輯 (Point 4 Optimization)
     const commentInterval = setInterval(async () => {
         const currentCandidates = voteService.getCandidates();
         if (currentCandidates.length === 0) return;
@@ -520,10 +608,6 @@ const ResultsPage: React.FC = () => {
         const currentLeader = sorted[0];
         const now = Date.now();
 
-        // 觸發條件：
-        // 1. 領先者變動 (黃金交叉)
-        // 2. 票數增長超過 10%
-        // 3. 保底 60 秒更新一次
         const shouldUpdate = 
             currentLeader?.id !== lastUpdateRef.current.leaderId ||
             totalVotes >= lastUpdateRef.current.totalVotes * 1.1 ||
@@ -537,7 +621,7 @@ const ResultsPage: React.FC = () => {
                 timestamp: now
             };
         }
-    }, 10000); // 每 10 秒檢查一次條件
+    }, 10000); 
 
     return () => { voteService.stopPolling(); unsub(); clearInterval(commentInterval); };
   }, [isAuthenticated]);
@@ -594,7 +678,6 @@ const ResultsPage: React.FC = () => {
     );
   }
 
-  // 安插的名單預覽畫面
   if (showPreview) {
     return (
       <div className="min-h-screen bg-transparent text-white relative pb-32 flex flex-col items-center">
@@ -693,7 +776,7 @@ const BackupPage: React.FC = () => {
     useEffect(() => {
         voteService.startPolling();
         const update = () => setCandidates(voteService.getCandidates());
-        update(); // 同步初始資料
+        update(); 
         const unsub = voteService.subscribe(update);
         return () => unsub();
     }, []);
@@ -829,21 +912,26 @@ const AdminPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [newCandidate, setNewCandidate] = useState({ name: '', song: '', image: '', videoLink: '' });
   const [stressCount, setStressCount] = useState(0);
   const [stressLogs, setStressLogs] = useState<string[]>([]);
   const [isStressTesting, setIsStressTesting] = useState(false);
   const [globalTestMode, setGlobalTestMode] = useState(false);
   const [isVotingOpen, setIsVotingOpen] = useState(true);
+  const [useStaffVerification, setUseStaffVerification] = useState(true);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   const [simulationTarget, setSimulationTarget] = useState<number>(900);
-  const [useGroupedScaling, setUseGroupedScaling] = useState(false); // 新增分群加權狀態
+  const [useGroupedScaling, setUseGroupedScaling] = useState(false); 
   const [isScaling, setIsScaling] = useState(false);
   const [csvContent, setCsvContent] = useState('');
+  const [staffIdCsv, setStaffIdCsv] = useState('');
   const [apiModal, setApiModal] = useState({ isOpen: false, msg: '' });
   const [loginErrorModal, setLoginErrorModal] = useState({ isOpen: false, msg: '' });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDangerous: false });
+
+  // Staff Stats
+  const [masterKeyCount, setMasterKeyCount] = useState(0);
+  const [authorizedStaffCount, setAuthorizedStaffCount] = useState(0);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -853,6 +941,9 @@ const AdminPage: React.FC = () => {
         setIsStressTesting(voteService.isRunningStressTest);
         setGlobalTestMode(voteService.isGlobalTestMode);
         setIsVotingOpen(voteService.isVotingOpen);
+        setUseStaffVerification(voteService.useStaffVerification);
+        setMasterKeyCount(voteService.masterKeyCount);
+        setAuthorizedStaffCount(voteService.authorizedStaffCount);
     };
     update();
     const unsub = voteService.subscribe(update);
@@ -899,10 +990,35 @@ const AdminPage: React.FC = () => {
       try {
           const res = await voteService.syncCandidatesFromText(csvContent);
           setApiModal({ isOpen: true, msg: res.message });
-          setCsvContent(''); // 清空
+          setCsvContent(''); 
       } finally {
           setIsSyncingSheet(false);
       }
+  };
+
+  const handleStaffIdUpload = async () => {
+      if (!staffIdCsv.trim()) {
+          setApiModal({ isOpen: true, msg: "請先貼入 8 碼工號名單。" });
+          return;
+      }
+      setIsSyncingSheet(true);
+      try {
+          const res = await voteService.uploadStaffIds(staffIdCsv);
+          setApiModal({ isOpen: true, msg: res.message });
+          setStaffIdCsv('');
+      } finally {
+          setIsSyncingSheet(false);
+      }
+  };
+
+  const handlePurgeStaff = async () => {
+    setIsSyncingSheet(true);
+    try {
+        const res = await voteService.purgeStaffVerification();
+        setApiModal({ isOpen: true, msg: res.message });
+    } finally {
+        setIsSyncingSheet(false);
+    }
   };
 
   const handleScaleSimulation = async () => {
@@ -974,8 +1090,7 @@ const AdminPage: React.FC = () => {
             </div>
         </div>
 
-        {/* --- 投票總數統計區塊 --- */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10 animate-fade-in-up">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-10 animate-fade-in-up">
             <div className="bg-slate-800/60 border border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">🎤 金嗓總票數</div>
                 <div className="text-3xl font-black text-yellow-500 font-mono">{totalSinging}</div>
@@ -992,10 +1107,51 @@ const AdminPage: React.FC = () => {
                 <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">📊 預估參與人數</div>
                 <div className="text-3xl font-black text-white font-mono">{Math.max(totalSinging, totalPopularity, totalCostume)}</div>
             </div>
+            <div className="bg-yellow-600/20 border border-yellow-500/30 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                <div className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-1">🔑 16888 萬用碼</div>
+                <div className="text-3xl font-black text-yellow-100 font-mono">{masterKeyCount}</div>
+            </div>
+            <div className="bg-slate-800/60 border border-slate-700 p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">🆔 已導入工號</div>
+                <div className="text-3xl font-black text-slate-100 font-mono">{authorizedStaffCount}</div>
+            </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-5 space-y-8">
+                {/* --- 身分驗證管理 --- */}
+                <div className="bg-[#1e293b]/60 backdrop-blur-xl border border-slate-700 p-6 rounded-3xl shadow-xl border-l-4 border-yellow-500">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-bold flex items-center gap-2">🆔 工號名單管理</h2>
+                        <div className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${useStaffVerification ? 'bg-yellow-600/20 text-yellow-400 border-yellow-500/30' : 'bg-slate-700/50 text-slate-500 border-slate-600/50'}`}>
+                            {useStaffVerification ? '驗證模式：ON' : '驗證模式：OFF'}
+                        </div>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-3">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">貼入 8 碼工號 (一行一個)</p>
+                            <textarea 
+                                value={staffIdCsv}
+                                onChange={e => setStaffIdCsv(e.target.value)}
+                                placeholder="12345678&#10;87654321&#10;..."
+                                className="w-full h-32 bg-black/30 border border-slate-700 rounded-xl p-3 text-[10px] font-mono focus:border-yellow-500 outline-none"
+                            ></textarea>
+                            <button onClick={handleStaffIdUpload} disabled={isSyncingSheet} className="w-full bg-yellow-600 hover:bg-yellow-500 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-50 shadow-md">
+                                {isSyncingSheet ? '上傳中...' : '✅ 導入工號名單'}
+                            </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-3">
+                            <button onClick={() => setConfirmModal({isOpen: true, title: '重置狀態', message: '確定重置所有工號的投票狀態嗎？', isDangerous: true, onConfirm: async () => { setConfirmModal(p => ({...p, isOpen: false})); const res = await voteService.resetStaffVotingStatus(); setApiModal({isOpen: true, msg: res.message}); }})} className="w-full bg-slate-800 hover:bg-slate-700 p-4 rounded-xl text-center text-sm font-bold border border-slate-600 transition-colors">
+                                🔄 重置所有工號投票狀態
+                            </button>
+                            <button onClick={() => setConfirmModal({isOpen: true, title: '⚠️ 移除工號驗證', message: '確定移除工號驗證並清空名單嗎？\n\n執行後：\n1. 徹底清空雲端名單資料\n2. 前台將不再跳出工號輸入框\n3. 投票將變為「全開放模式」\n\n(原本投過的指紋與模擬數據會保留)', isDangerous: true, onConfirm: async () => { setConfirmModal(p => ({...p, isOpen: false})); handlePurgeStaff(); }})} className="w-full bg-red-900/20 hover:bg-red-900/40 border border-red-500/50 text-red-400 p-4 rounded-xl text-center text-sm font-bold transition-all shadow-inner">
+                                ⚠️ 移除工號驗證並清空名單
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="bg-[#1e293b]/60 backdrop-blur-xl border border-slate-700 p-6 rounded-3xl shadow-xl border-l-4 border-purple-500">
                     <h2 className="text-xl font-bold mb-6 flex items-center gap-2">🎮 活動模式與通道</h2>
                     <div className="space-y-4">
@@ -1031,7 +1187,7 @@ const AdminPage: React.FC = () => {
 
                 <div className="bg-[#1e293b]/60 backdrop-blur-xl border border-slate-700 p-6 rounded-3xl shadow-xl border-l-4 border-blue-500">
                     <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-xl font-bold flex items-center gap-2">🛠️ 資料維護</h2>
+                        <h2 className="text-xl font-bold flex items-center gap-2">🛠️ 參賽者維護</h2>
                         <span className="bg-blue-600/30 text-blue-400 px-3 py-1 rounded-full text-xs font-black border border-blue-500/30">目前參與：{totalSinging} 人</span>
                     </div>
                     <div className="grid grid-cols-1 gap-4">
@@ -1040,11 +1196,11 @@ const AdminPage: React.FC = () => {
                         </button>
                         
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-3">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">手動貼上 CSV 資料 (防攔截)</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">手動貼上參賽者 CSV</p>
                             <textarea 
                                 value={csvContent}
                                 onChange={e => setCsvContent(e.target.value)}
-                                placeholder="請在此貼入試算表 CSV 內容..."
+                                placeholder="ID,Name,Song,Image,Video..."
                                 className="w-full h-32 bg-black/30 border border-slate-700 rounded-xl p-3 text-[10px] font-mono focus:border-blue-500 outline-none"
                             ></textarea>
                             <button onClick={handleManualSync} disabled={isSyncingSheet} className="w-full bg-blue-700 hover:bg-blue-600 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-50">
@@ -1053,9 +1209,8 @@ const AdminPage: React.FC = () => {
                         </div>
 
                         <div className="bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50 space-y-4">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">投票後台維護區</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">後台投票維護區</p>
                             
-                            {/* 新增的 Checkbox 區域 */}
                             <label className="flex items-center gap-3 cursor-pointer group bg-slate-800/40 p-3 rounded-xl border border-slate-700/50 hover:bg-slate-800 transition-all">
                                 <div className="relative">
                                     <input 
@@ -1069,8 +1224,8 @@ const AdminPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-black text-slate-200">啟用維護機制</span>
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">我知、你知、獨眼龍也知</span>
+                                    <span className="text-sm font-black text-slate-200">啟用投票維護</span>
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">你知、我知、獨眼龍也知</span>
                                 </div>
                             </label>
 
@@ -1083,11 +1238,11 @@ const AdminPage: React.FC = () => {
                                     className="flex-1 bg-black/30 border border-slate-700 rounded-xl px-4 py-2 text-yellow-500 font-black outline-none focus:border-yellow-500"
                                 />
                                 <button 
-                                    onClick={() => setConfirmModal({isOpen: true, title: '投票維護', message: `即將按照「XXXX」將各獎項票數掃描 ${simulationTarget} 票，並使用 ${useGroupedScaling ? '「基礎維護」' : '「進階維護」'} 模式。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
+                                    onClick={() => setConfirmModal({isOpen: true, title: '維護啟用', message: `即將按照維護原則於 ${simulationTarget} 票，並使用 ${useGroupedScaling ? '「模式2」' : '「模式2」'} 模式。確定執行？`, isDangerous: false, onConfirm: () => { setConfirmModal(p => ({...p, isOpen: false})); handleScaleSimulation(); }})}
                                     disabled={isScaling}
                                     className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50"
                                 >
-                                    啟動
+                                    啟用
                                 </button>
                             </div>
                             <button 
@@ -1095,7 +1250,7 @@ const AdminPage: React.FC = () => {
                                 disabled={isScaling}
                                 className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
                             >
-                                ⏪ 還原維護紀錄
+                                ⏪ 復原投票系統
                             </button>
                         </div>
 
@@ -1112,7 +1267,7 @@ const AdminPage: React.FC = () => {
             <div className="lg:col-span-7 bg-[#1e293b]/60 backdrop-blur-xl border border-slate-700 p-6 md:p-8 rounded-3xl shadow-xl border-l-4 border-yellow-500">
                 <h2 className="text-2xl font-bold mb-6">🎤 參賽者清單 (現有 {candidates.length} 位)</h2>
                 
-                <div className="space-y-4 max-h-[700px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-4 max-h-[1000px] overflow-y-auto pr-2 custom-scrollbar">
                     {candidates.map(c => (
                         <div key={c.id} className="bg-slate-800/40 border border-slate-700/50 p-4 rounded-2xl flex items-center justify-between group">
                             <div className="flex items-center gap-4 truncate">
